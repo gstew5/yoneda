@@ -4,7 +4,9 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Import Prenex Implicits. 
 
-(* Proof of Yoneda's Lemma *)
+(** * Proof of the Yoneda Lemma *)
+
+(** ** Functors *)
 
 Module Functor.
 
@@ -56,8 +58,6 @@ Notation fmap := Functor.fmap.
 Arguments Functor.fmap [cT A B] _ _.
 Prenex Implicits Functor.fmap.
 
-(* re-state functor laws exported notation *)
-
 Section Laws.
 Variable F : functor.
 
@@ -77,6 +77,27 @@ End Exports.
 End Functor.
 
 Export Functor.Exports.
+
+Section RightFunctor.
+Variable A : Type.
+
+Notation tp := (fun R => A -> R).
+
+Program Definition rightFunctorMixin := 
+  @Functor.Mixin tp (fun _ _ f g => f \o g) _ _.
+Definition rightFunctor : functor := 
+  Eval hnf in Functor tp rightFunctorMixin.
+
+Lemma right_fmap (B C : Type) (f : B -> C) (g : rightFunctor B) :
+  fmap f g = f \o g.
+Proof. by rewrite /rightFunctor /= /rightFunctorMixin /Functor.fmap. Qed.
+
+End RightFunctor.
+
+Notation "A '==>' '?'" := (rightFunctor A)
+  (at level 50, format "A  '==>'  '?'") : form_scope.
+
+(** ** Natural Transformations \eta *)
 
 Module Natural.
 
@@ -130,8 +151,6 @@ Notation eta := Natural.eta.
 
 Arguments Natural.eta F G [cT] [A] _.
 
-(* re-state natural laws using exported notation *)
-
 Section Laws.
 Variables F G : functor.
 Variable eta : natural F G.
@@ -142,6 +161,17 @@ Proof. by case: eta=> [][][]. Qed.
 
 End Laws.
 
+Section Extensionality.
+Variables F G : functor.
+Variable eta1 eta2 : natural F G.
+
+Lemma eta_extensionality : 
+  (forall R g, eta1 R g = eta2 R g) -> eta1 = eta2.
+Proof.
+Admitted.
+
+End Extensionality.  
+
 Hint Resolve eta_natural.
 
 End Exports.
@@ -149,26 +179,82 @@ End Exports.
 End Natural.
 
 Export Natural.Exports.
+
+(** ** Isomorphisms *)
+
+Module Iso.
+
+Section RawMixin.
+
+Record mixin_of (T U : Type) := Mixin {
+  mx_f : T -> U;
+  mx_g : U -> T;
+  _ : forall t, (mx_g \o mx_f) t = t;
+  _ : forall u, (mx_f \o mx_g) u = u
+}.
+
+End RawMixin.
+
+Section ClassDef.
+
+Variables T U : Type.
+
+Record class_of T U := Class {mixin : mixin_of T U}.
+
+Structure type : Type := Pack {_ : class_of T U}.
+
+Variable cT : type.
+Definition class := let: Pack c as cT' := cT return class_of T U in c.
+Definition clone c of phant_id class c := @Pack c.
+
+(* produce a natural type out of the mixin *)
+(* equalize m0 and m by means of a phantom *)
+Definition pack (m0 : mixin_of T U) := 
+  fun m & phant_id m0 m => Pack (@Class T U m).
+
+Definition iso_f := mx_f (mixin class).
+Definition iso_g := mx_g (mixin class).
+
+End ClassDef.
+
+Module Exports.
+Notation iso := Iso.type.
+Notation IsoMixin := Iso.Mixin.
+Notation Iso T U m := (@pack T U _ m id).
+
+Notation "[ 'iso' 'of' T U 'for' cT ]" := (@clone T U cT _ id)
+  (at level 0, format "[ 'iso'  'of'  T  U  'for'  cT ]") : form_scope.
+Notation "[ 'iso' 'of' T U ]" := (@clone T U _ _ id)
+  (at level 0, format "[ 'iso'  'of'  T  U ]") : form_scope.
+Notation "T ~= U" := (iso T U)
+  (at level 60, format "T  '~='  U") : form_scope.
+
+Notation iso_f := Iso.iso_f.
+Notation iso_g := Iso.iso_g.
+
+Arguments Iso.iso_f [T U] cT t.
+Arguments Iso.iso_g [T U] cT u.
+
+Section Laws.
+Variables T U : Type.
+Variable iso : iso T U.
+
+Lemma iso_gf (t : T) : (iso_g iso \o iso_f iso) t = t.
+Proof. by case: iso=> [][][]. Qed.
+
+Lemma iso_fg (u : U) : (iso_f iso \o iso_g iso) u = u.
+Proof. by case: iso=> [][][]. Qed.
+
+End Laws.
+
+Hint Resolve iso_gf iso_fg.
+
+End Exports.
+
+End Iso.
+
+Export Iso.Exports.
  
-Section RightFunctor.
-Variable A : Type.
-
-Notation tp := (fun R => A -> R).
-
-Program Definition rightFunctorMixin := 
-  @Functor.Mixin tp (fun _ _ f g => f \o g) _ _.
-Definition rightFunctor : functor := 
-  Eval hnf in Functor tp rightFunctorMixin.
-
-Lemma right_fmap (B C : Type) (f : B -> C) (g : rightFunctor B) :
-  fmap f g = f \o g.
-Proof. by rewrite /rightFunctor /= /rightFunctorMixin /Functor.fmap. Qed.
-
-End RightFunctor.
-
-Notation "A '==>' '?'" := (rightFunctor A)
-  (at level 50, format "A  '==>'  '?'") : form_scope.
-
 Section Yoneda.
 Variable F : functor.
 
@@ -198,7 +284,21 @@ Proof. by []. Qed.
 Lemma uncheck_check A (x : F A) : uncheck (check x) = x.
 Proof. by rewrite /uncheck checkP fmap_id. Qed.
 
-Lemma check_uncheck A (y : Y A) R g : check (uncheck y) R g = y R g.
+Lemma check_uncheck' A (y : Y A) R g : check (uncheck y) R g = y R g.
 Proof. by rewrite /uncheck checkP -eta_natural right_fmap. Qed.
 
+Lemma check_uncheck A (y : Y A) : check (uncheck y) = y.
+Proof. by apply: eta_extensionality=> R g; apply: check_uncheck'. Qed.
+
 End Yoneda.
+
+Section YonedaIso.
+Variable F : functor.
+
+Definition YonedaIsoMixin (A : Type) := 
+  @IsoMixin (Y F A) (F A) (@uncheck F A) (@check F A) 
+            (@check_uncheck F A) (@uncheck_check F A).
+Definition YonedaIso (A : Type) := @Iso (Y F A) (F A) (YonedaIsoMixin A).
+
+End YonedaIso.
+
