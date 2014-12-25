@@ -1,5 +1,6 @@
 Require Import ssreflect ssrfun ssrbool eqtype seq.
 Require Import FunctionalExtensionality.
+Require Import Coq.Logic.ProofIrrelevance.
 Set Implicit Arguments.
 Unset Strict Implicit.
 Import Prenex Implicits. 
@@ -168,7 +169,12 @@ Variable eta1 eta2 : natural F G.
 Lemma eta_extensionality : 
   (forall R g, eta1 R g = eta2 R g) -> eta1 = eta2.
 Proof.
-Admitted.
+move=> H; destruct eta1, eta2. 
+destruct c, c0; destruct mixin0, mixin1; f_equal; f_equal.
+have Heq: mx_eta0 = mx_eta1.
+{ extensionality R; extensionality g; by apply: (H R g). }
+by subst; f_equal; apply proof_irrelevance.
+Qed.
 
 End Extensionality.  
 
